@@ -41,7 +41,7 @@ Alternatively set `VCVARS64` to your existing `vcvars64.bat`. Output: `dist/Quic
 
 This is a **prerelease** based on the development revision 63 used during October 2026 testing. Runtime function addresses are located with checked signatures; game updates can require a new build. The release records the reference client executable hash in `VALIDATION.txt`.
 
-Observed in real Windows gameplay: Ctrl-right-click salvage with rewards, saved-rule automatic salvage, rule removal, and the rules interface. Seven native mock test programs cover matching, persistence, eligibility, request handling, aggregate-result storage, ordinary draw passthrough, and text-style relocation.
+Observed in real Windows gameplay: Ctrl-right-click salvage with rewards, saved-rule automatic salvage, rule removal, and the rules interface. Seven native mock test programs cover matching, persistence, eligibility, request handling, aggregate-result storage, ordinary draw passthrough, and text-style relocation. An additional DLL startup regression exercises 32 small-stack thread attach/detach cycles and unload against the production callback, without installing game hooks.
 
 Still awaiting independent verification: this standalone ASI's complete startup/restart path, automatic salvage of newly acquired matching items across ordinary play, and the latest revision's open-panel refresh. Native mocks do not establish those gameplay results. Proton is untested.
 

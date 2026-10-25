@@ -20,4 +20,11 @@ for %%T in (rules rule_store inventory abi automatic performance panel_text_styl
     if errorlevel 1 exit /b 1
     popd
 )
-echo All seven native mock test programs passed. These are not real-game or Proton tests.
+rem Use a DLL filename so the production callback runs without starting game hooks.
+cl /nologo /O2 /MT /EHsc /std:c++17 /W4 /LD src\quick_salvage.cpp /Fo:build\startup_module.obj /link /OUT:build\QuickSalvageStartupTest.dll /IMPLIB:build\startup_module.lib user32.lib
+if errorlevel 1 exit /b 1
+cl /nologo /O2 /MT /EHsc /std:c++17 /W4 src\startup_test.cpp /Fo:build\startup_test.obj /Fe:build\startup_test.exe
+if errorlevel 1 exit /b 1
+build\startup_test.exe "%CD%\build\QuickSalvageStartupTest.dll"
+if errorlevel 1 exit /b 1
+echo All seven native mock programs and the DLL startup regression passed. These are not real-game or Proton tests.

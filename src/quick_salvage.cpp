@@ -68,11 +68,17 @@ static DWORD WINAPI Startup(void*){
  for(unsigned n=0;n<240;++n){HWND hwnd=nullptr;EnumWindows(mouse_observer::Find,(LPARAM)&hwnd);if(hwnd){QuickSalvageInstall();return 0;}Sleep(250);}
  InitializePaths();Trace("QUICK_SALVAGE_STARTUP_NO_GAME_WINDOW hooks_not_installed=1");return 0;
 }
+// Keep the 64 KiB path buffer out of DllMain's frame. Even a no-op thread
+// notification can arrive on a small stack; noinline prevents /O2 from
+// moving this process-attach-only allocation back into the callback.
+static __declspec(noinline) void StartStandalone(HINSTANCE module){
+ wchar_t path[32768]{};auto n=GetModuleFileNameW(module,path,32768);
+ if(n>4&&!_wcsicmp(path+n-4,L".asi"))CloseHandle(CreateThread(nullptr,0,Startup,nullptr,0,nullptr));
+}
 BOOL WINAPI DllMain(HINSTANCE module,DWORD reason,LPVOID){
  if(reason==DLL_PROCESS_ATTACH){
   ownModule=module;DisableThreadLibraryCalls(module);
-  wchar_t path[32768]{};auto n=GetModuleFileNameW(module,path,32768);
-  if(n>4&&!_wcsicmp(path+n-4,L".asi"))CloseHandle(CreateThread(nullptr,0,Startup,nullptr,0,nullptr));
+  StartStandalone(module);
  }
  return TRUE;
 }

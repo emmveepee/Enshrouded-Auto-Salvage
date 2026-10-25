@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix startup stack overflow on small-stack thread notifications by isolating the large path buffer in a non-inlined, process-attach-only helper. Add a native DLL lifecycle regression.
+
 ## v0.1.0-alpha.1
 
 Initial standalone source publication and ASI prerelease, based on development revision 63.
