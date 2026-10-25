@@ -39,7 +39,7 @@ Alternatively set `VCVARS64` to your existing `vcvars64.bat`. Output: `dist/Quic
 
 ## Status and compatibility
 
-This is a **prerelease** based on the development revision 63 used during October 2026 testing. Runtime function addresses are located with checked signatures; game updates can require a new build. The release records the reference client executable hash in `VALIDATION.txt`.
+This is a **prerelease** based on development revision 63, with a startup stack-overflow fix in **v0.1.0-alpha.2** contributed by [BenWare144 in PR #1](https://github.com/emmveepee/Enshrouded-Auto-Salvage/pull/1). Update from alpha.1 if the mod crashes during startup. Runtime function addresses are located with checked signatures; game updates can require a new build. The release records the reference client executable hash in `VALIDATION.txt`.
 
 Observed in real Windows gameplay: Ctrl-right-click salvage with rewards, saved-rule automatic salvage, rule removal, and the rules interface. Seven native mock test programs cover matching, persistence, eligibility, request handling, aggregate-result storage, ordinary draw passthrough, and text-style relocation. An additional DLL startup regression exercises 32 small-stack thread attach/detach cycles and unload against the production callback, without installing game hooks.
 
