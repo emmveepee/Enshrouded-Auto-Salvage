@@ -56,6 +56,32 @@ class Rules {
   }entries.swap(next.entries);return true;
  }
 };
+// Fork: rarity keep-list. A protected rarity is never salvaged by the
+// keep-list paths and acts as a hard guard over exact rules too.
+struct KeepList {
+ bool keep[5]={false,false,false,false,true}; // Default: Legendary only.
+ bool Protects(unsigned rarity)const{return rarity<=4&&keep[rarity];}
+ // Parses a list like "3,4" (spaces/semicolons also accepted). Tokens that
+ // are not rarities 0..4 are ignored; if no valid token is found the
+ // default stays, so a typo in the ini can never unprotect everything.
+ static KeepList Parse(const std::string& text){
+  KeepList out;bool flags[5]={false,false,false,false,false};bool any=false;size_t i=0;
+  while(i<text.size()){
+   if(text[i]<'0'||text[i]>'9'){++i;continue;}
+   unsigned value=0;while(i<text.size()&&text[i]>='0'&&text[i]<='9'){value=value*10+unsigned(text[i]-'0');++i;}
+   if(value<=4){flags[value]=true;any=true;}
+  }
+  if(any)for(unsigned r=0;r<5;++r)out.keep[r]=flags[r];
+  return out;
+ }
+};
+// Fork gate for the automatic path (and later the bag sweep): hard guard
+// first, then either an exact rule match or, with keep-list auto enabled,
+// any valid item. Eligibility is still checked separately by the caller.
+inline bool AutoSalvageMatch(const Key& key,const Rules& rules,const KeepList& keep,bool keepListAuto){
+ if(!key.Valid()||keep.Protects(key.rarity))return false;
+ return keepListAuto||rules.Contains(key);
+}
 // The caller derives these flags from native owned inventory and native item
 // action availability. Unknown item metadata is never treated as a match.
 struct Candidate {Key key;uint64_t session=0;uint32_t page=0,pide=0,count=0;uint8_t slot=0;bool owned=false,equipped=false,canSalvage=false,metadataValid=false;};

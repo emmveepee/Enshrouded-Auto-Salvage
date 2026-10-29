@@ -4,6 +4,16 @@ namespace native_salvage {
 using QueueFn=bool(__fastcall*)(void*,uint64_t);
 static QueueFn queue=nullptr;static void** appSlot=nullptr;
 static bool Enabled(){return GetPrivateProfileIntW(L"QuickSalvage",L"Enabled",0,configPath.c_str())!=0;}
+// Fork settings, read live from the [Fork] ini section, same pattern as
+// Enabled() above. Step 1 wires KeepRarities + AutoSalvage; BackpackOnly
+// is parsed here and consumed by the step-2 backpack filter.
+static salvage::KeepList LoadKeepList(){
+ wchar_t text[64]{};GetPrivateProfileStringW(L"Fork",L"KeepRarities",L"4",text,64,configPath.c_str());
+ char narrow[64]{};for(unsigned i=0;i<63&&text[i];++i)narrow[i]=(text[i]>=32&&text[i]<127)?char(text[i]):' ';
+ return salvage::KeepList::Parse(narrow);
+}
+static bool KeepListAuto(){return GetPrivateProfileIntW(L"Fork",L"AutoSalvage",0,configPath.c_str())!=0;}
+static bool BackpackOnly(){return GetPrivateProfileIntW(L"Fork",L"BackpackOnly",1,configPath.c_str())!=0;}
 static void* Component(uint32_t hash,uint32_t id){alignas(16) uint8_t result[32]{};if(reader&&ecs&&id)reader(result,ecs,hash,id);return Read<void*>(result);}
 static bool Copy(void* out,const void* value,size_t size){__try{if(!value)return false;memcpy(out,value,size);return true;}__except(EXCEPTION_EXECUTE_HANDLER){memset(out,0,size);return false;}}
 // Copy only the component bytes actually consumed. Fault containment covers
