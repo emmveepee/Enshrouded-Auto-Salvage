@@ -64,7 +64,11 @@ struct KeepList {
  // Parses a list like "3,4" (spaces/semicolons also accepted). Tokens that
  // are not rarities 0..4 are ignored; if no valid token is found the
  // default stays, so a typo in the ini can never unprotect everything.
+ // The one deliberate exception is the exact word "none" (the panel
+ // writes it when every rarity is unchecked): an explicitly empty list.
  static KeepList Parse(const std::string& text){
+  std::string squashed;for(char ch:text)if(ch!=' '&&ch!='\t'&&ch!=','&&ch!=';')squashed+=char(ch>='A'&&ch<='Z'?ch-'A'+'a':ch);
+  if(squashed=="none"){KeepList out;for(unsigned r=0;r<5;++r)out.keep[r]=false;return out;}
   KeepList out;bool flags[5]={false,false,false,false,false};bool any=false;size_t i=0;
   while(i<text.size()){
    if(text[i]<'0'||text[i]>'9'){++i;continue;}
@@ -74,6 +78,9 @@ struct KeepList {
   if(any)for(unsigned r=0;r<5;++r)out.keep[r]=flags[r];
   return out;
  }
+ // "0,2,4" form; the empty list encodes as "none" (see Parse), so a
+ // panel round-trip can represent every combination exactly.
+ std::string Encode()const{std::string out;for(unsigned r=0;r<5;++r){if(!keep[r])continue;if(!out.empty())out+=',';out+=char('0'+r);}return out.empty()?"none":out;}
 };
 // Fork gate for the automatic path (and later the bag sweep): hard guard
 // first, then either an exact rule match or, with keep-list auto enabled,
@@ -88,14 +95,22 @@ struct Candidate {Key key;uint64_t session=0;uint32_t page=0,pide=0,count=0;uint
 inline bool Eligible(const Candidate& c){return c.key.Valid()&&c.session&&c.page&&c.pide&&c.slot<8&&c.count&&c.owned&&!c.equipped&&c.canSalvage&&c.metadataValid;}
 class Pending {
  struct Fingerprint {uint64_t session;uint32_t pide,item;bool operator<(const Fingerprint& b)const {return std::tie(session,pide,item)<std::tie(b.session,b.pide,b.item);}};
- std::set<Fingerprint> sent;
+ std::map<Fingerprint,uint64_t> sent;
  uint64_t session=0;
+ static uint64_t NowMs(){return uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());}
+ // Fork: a claim whose native request the game silently drops would
+ // otherwise block its item for the whole session — the fingerprint is
+ // normally cleared only when the item leaves the inventory. Expire a
+ // claim that outlives this window so a dropped request is retried
+ // instead of forgotten. Normal claims resolve in well under a second;
+ // 10s is far beyond any legitimate in-flight request.
+ static constexpr uint64_t kRetryAfterMs=10000;
  public:
- bool Claim(const Candidate& c){if(!Eligible(c))return false;if(c.session!=session){sent.clear();session=c.session;}return sent.insert({c.session,c.pide,c.key.item}).second;}
+ bool Claim(const Candidate& c){if(!Eligible(c))return false;if(c.session!=session){sent.clear();session=c.session;}Fingerprint f{c.session,c.pide,c.key.item};uint64_t now=NowMs();auto it=sent.find(f);if(it!=sent.end()){if(now-it->second<kRetryAfterMs)return false;it->second=now;return true;}sent.emplace(f,now);return true;}
  void Cancel(const Candidate& c){sent.erase({c.session,c.pide,c.key.item});}
  // Retain only requests for items that still exist. A removed and subsequently
  // acquired item can be processed again; an unchanged failed item is not spammed.
- void Observe(const std::vector<Candidate>& inventory){std::set<Fingerprint> live;for(auto& c:inventory)if(c.session==session)live.insert({c.session,c.pide,c.key.item});for(auto i=sent.begin();i!=sent.end();)if(!live.count(*i))i=sent.erase(i);else ++i;}
+ void Observe(const std::vector<Candidate>& inventory){std::set<Fingerprint> live;for(auto& c:inventory)if(c.session==session)live.insert({c.session,c.pide,c.key.item});for(auto i=sent.begin();i!=sent.end();)if(!live.count(i->first))i=sent.erase(i);else ++i;}
 };
 class Gesture {
  bool wasDown=false,latched=false;
