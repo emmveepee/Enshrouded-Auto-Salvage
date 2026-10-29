@@ -68,6 +68,7 @@ Download the ZIP from Releases, extract it, and read INSTALL.txt.
 
 Close Enshrouded.
 Install a Windows x64 ASI loader, such as Ultimate ASI Loader. A copy is included in the release's OptionalLoader folder. If you already use an ASI loader, keep it; do not overwrite another mod's dinput8.dll blindly.
+If dinput8.dll is already in use by another mod, you do not need Ultimate ASI Loader at all: a chaining loader such as Mod Loader Proxy can load the ASI directly. Add QuickSalvage.asi to the loader's chain.ini, keep QuickSalvage.ini beside enshrouded.exe, and start the game normally.
 Copy QuickSalvage.asi and QuickSalvage.ini beside enshrouded.exe. Steam: Manage > Browse local files.
 Start the game normally. No server installation or Auto Loot mod is required.
 Rules start empty. They are stored in AutoSalvage.rules beside the mod. Preserve that file and your settings when updating.
