@@ -163,7 +163,32 @@ static void Draw(){
  }
  if(!entries.empty()){alignas(16) uint8_t bottomSpace[256]{};Group(bottomSpace,"rulesBottomSpace",0);height(Read<void*>(bottomSpace,8),8);native_menu::endGroup(bottomSpace);}
  endScrollingLayout(scrolling);
- alignas(16) uint8_t footer[256]{};Group(footer,"rulesFooter",0);stretch(Read<void*>(footer,8),Pair(1,0));padding(Read<void*>(footer,8),chromeInset);if(Button("Back",0))opened=false;native_menu::endGroup(footer);
+ alignas(16) uint8_t footer[256]{};Group(footer,"rulesFooter",0);stretch(Read<void*>(footer,8),Pair(1,0));padding(Read<void*>(footer,8),chromeInset);
+ // Fork: keep-list checkboxes. Each click flips one rarity and writes
+ // the whole list back to the ini (SetKeepList); Pump and the commit
+ // path reload it on every scan, and these labels re-read it every
+ // frame, so the boxes always show the live state. Panel stays open.
+ Text("Keep Rarities (never auto-salvaged)",theme);
+ // Rows are opened, filled and closed one at a time (the author's code
+ // never opens two groups back to back) and sized explicitly, with the
+ // alignment the Sort button uses to place its group — {1,2} centers a
+ // fixed-size row in the footer instead of packing it left.
+ const uint8_t rowCenter[2]={1,2};
+ {auto keepList=native_salvage::LoadKeepList();static const char* rarityNames[5]={"Common","Uncommon","Rare","Epic","Legendary"};
+  auto keepBox=[&](unsigned r){char boxLabel[40];sprintf_s(boxLabel,"%s %s",keepList.keep[r]?"[x]":"[ ]",rarityNames[r]);if(Button(boxLabel,200,4,36)){auto next=keepList;next.keep[r]=!next.keep[r];native_salvage::SetKeepList(next);}};
+  alignas(16) uint8_t keepRow1[256]{};Group(keepRow1,"rulesKeepRow1",8,true);sizePair(Read<void*>(keepRow1,8),Pair(616,36));alignment(Read<void*>(keepRow1,8),rowCenter);
+  keepBox(0);keepBox(1);keepBox(2);native_menu::endGroup(keepRow1);
+  alignas(16) uint8_t keepRow2[256]{};Group(keepRow2,"rulesKeepRow2",8,true);sizePair(Read<void*>(keepRow2,8),Pair(408,36));alignment(Read<void*>(keepRow2,8),rowCenter);
+  keepBox(3);keepBox(4);native_menu::endGroup(keepRow2);}
+ // Fork: Auto toggle and the step-3 Salvage Bag sweep share one row.
+ // The toggle writes the same [Fork] AutoSalvage ini key the automatic
+ // path reads live (panel stays open); the sweep requests the drain
+ // through the automatic path and closes the panel so it is visible.
+ alignas(16) uint8_t actionRow[256]{};Group(actionRow,"rulesActionRow",8,true);sizePair(Read<void*>(actionRow,8),Pair(448,40));alignment(Read<void*>(actionRow,8),rowCenter);
+ if(Button(native_salvage::KeepListAuto()?"Auto Salvage: On":"Auto Salvage: Off",250,4,40))native_salvage::SetAutoSalvage(!native_salvage::KeepListAuto());
+ if(Button("Salvage Bag",190,4,40)){native_salvage::RequestSweep();opened=false;}
+ native_menu::endGroup(actionRow);
+ if(Button("Back",0))opened=false;native_menu::endGroup(footer);
  native_menu::endGroup(panel);
  // Sibling of the full-size content inside a stack layout: it cannot consume
  // list height. Draw last at the native context-menu layer, over the cards.

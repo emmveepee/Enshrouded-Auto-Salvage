@@ -4,6 +4,27 @@ namespace native_salvage {
 using QueueFn=bool(__fastcall*)(void*,uint64_t);
 static QueueFn queue=nullptr;static void** appSlot=nullptr;
 static bool Enabled(){return GetPrivateProfileIntW(L"QuickSalvage",L"Enabled",0,configPath.c_str())!=0;}
+// Fork settings, read live from the [Fork] ini section, same pattern as
+// Enabled() above. Step 1 wires KeepRarities + AutoSalvage; BackpackOnly
+// is parsed here and consumed by the step-2 backpack filter.
+static salvage::KeepList LoadKeepList(){
+ wchar_t text[64]{};GetPrivateProfileStringW(L"Fork",L"KeepRarities",L"4",text,64,configPath.c_str());
+ char narrow[64]{};for(unsigned i=0;i<63&&text[i];++i)narrow[i]=(text[i]>=32&&text[i]<127)?char(text[i]):' ';
+ return salvage::KeepList::Parse(narrow);
+}
+static bool KeepListAuto(){return GetPrivateProfileIntW(L"Fork",L"AutoSalvage",0,configPath.c_str())!=0;}
+// Fork: the rules panel's Auto toggle writes the same ini key KeepListAuto()
+// reads live, so the automatic path picks the flip up on its next scan.
+static void SetAutoSalvage(bool on){bool ok=WritePrivateProfileStringW(L"Fork",L"AutoSalvage",on?L"1":L"0",configPath.c_str())!=0;Trace(ok?(on?"AUTO_TOGGLE ini=1":"AUTO_TOGGLE ini=0"):"AUTO_TOGGLE_WRITE_FAILED");}
+// Fork: the rules panel's rarity checkboxes write the whole keep-list
+// back to the ini key LoadKeepList() reads live (Encode produces the
+// "0,2,4" form, or "none" for an explicitly empty list).
+static void SetKeepList(const salvage::KeepList& list){
+ auto value=list.Encode();wchar_t wide[24]{};for(size_t i=0;i<value.size()&&i<23;++i)wide[i]=value[i];
+ bool ok=WritePrivateProfileStringW(L"Fork",L"KeepRarities",wide,configPath.c_str())!=0;
+ char message[64];sprintf_s(message,"KEEP_RARITIES ini=%s saved=%u",value.c_str(),ok);Trace(message);
+}
+static bool BackpackOnly(){return GetPrivateProfileIntW(L"Fork",L"BackpackOnly",1,configPath.c_str())!=0;}
 static void* Component(uint32_t hash,uint32_t id){alignas(16) uint8_t result[32]{};if(reader&&ecs&&id)reader(result,ecs,hash,id);return Read<void*>(result);}
 static bool Copy(void* out,const void* value,size_t size){__try{if(!value)return false;memcpy(out,value,size);return true;}__except(EXCEPTION_EXECUTE_HANDLER){memset(out,0,size);return false;}}
 // Copy only the component bytes actually consumed. Fault containment covers
@@ -25,6 +46,59 @@ static std::vector<uint32_t> OwnedPages(){
  return pages;
 }
 static bool OwnedPage(uint32_t page){auto pages=OwnedPages();return std::find(pages.begin(),pages.end(),page)!=pages.end();}
+// Fork: category-aware twin of OwnedPages(), for the page probe and the
+// step-2 backpack filter. Same traversal and dedup rules; each collected
+// page also reports the InventoryCategory it was linked with
+// (keen::InventoryCategory: 4=Generic, 5=Virtual), the entity whose
+// InventorySetup linked it (parent), and its link depth (0 = linked
+// directly from the player's own setup). The player's setup is always
+// walked first, so a page reachable both directly and nested is recorded
+// as direct. Parent/depth turned out NOT to identify the action bar (it
+// is one of several depth-0 Generic pages); they stay as diagnostics.
+// The bar is named authoritatively by SlotSelection below.
+struct PageInfo{uint32_t page=0;unsigned category=0;uint32_t parent=0;unsigned depth=0;};
+static std::vector<PageInfo> OwnedPagesDetailed(){
+ std::vector<PageInfo> pages;std::vector<uint32_t> visited{localPlayer};std::vector<unsigned> depths{0};uint8_t top[84]{};
+ if(!Snapshot(top,sizeof top,0xc24df82a,localPlayer)||!(top[80]&1)||!top[83])return pages;
+ for(size_t n=0;n<visited.size()&&n<64;++n){
+  uint8_t setup[84]{};if(!Snapshot(setup,sizeof setup,0xc24df82a,visited[n])||!setup[83])continue;
+  for(unsigned i=0;i<16;++i){auto page=Read<uint32_t>(setup,i*4);if(!page)continue;
+   if(std::find(visited.begin(),visited.end(),page)==visited.end()&&visited.size()<64){visited.push_back(page);depths.push_back(depths[n]+1);}
+   auto category=unsigned(setup[64+i]);
+   if((category==4||category==5)&&std::find_if(pages.begin(),pages.end(),[&](const PageInfo& info){return info.page==page;})==pages.end())pages.push_back({page,category,visited[n],depths[n]});
+  }
+ }
+ return pages;
+}
+static bool PageProbe(){return GetPrivateProfileIntW(L"Fork",L"PageProbe",0,configPath.c_str())!=0;}
+// Fork: the player's SlotSelection component names the action-bar page
+// entities directly — keen::ecs::SlotSelection::actionbarEntityIds, a
+// StaticArray<EntityId,2> at byte offset 160 (the bar has two switchable
+// pages). Component type hashes are FNV-1a of the qualified type name;
+// verified against InventorySetup/Inventory/ItemState above.
+// SlotSelection (216 bytes, hash 0x34bc3e2f) is tried first, then the
+// packed replication variant (192 bytes, hash 0x8d59567b, ids at 136).
+struct ActionbarPages{uint32_t first=0,second=0;bool valid=false;};
+static ActionbarPages ReadActionbarPages(){
+ ActionbarPages result;uint8_t buffer[216]{};
+ if(Snapshot(buffer,sizeof buffer,0x34bc3e2f,localPlayer)){
+  result.first=Read<uint32_t>(buffer,160);result.second=Read<uint32_t>(buffer,164);
+  if(result.first||result.second){result.valid=true;return result;}
+ }
+ uint8_t packed[192]{};
+ if(Snapshot(packed,sizeof packed,0x8d59567b,localPlayer)){
+  result.first=Read<uint32_t>(packed,136);result.second=Read<uint32_t>(packed,140);
+  if(result.first||result.second)result.valid=true;
+ }
+ return result;
+}
+static bool IsActionbarPage(uint32_t page,const ActionbarPages& bars){return bars.valid&&page!=0&&(page==bars.first||page==bars.second);}
+// Fork step 3: the rules panel's Salvage Bag button sets this flag; the
+// automatic path latches it and sweeps the backpack using the sweep
+// matcher (exact rules OR anything the keep-list does not protect),
+// with the usual bar-page and equipped exclusions.
+static std::atomic<bool> sweepRequested{false};
+static void RequestSweep(){sweepRequested.store(true);}
 static salvage::Candidate Candidate(uint8_t* view,bool allowed,bool diagnose=false){
  uint8_t copiedView[72]{};salvage::Candidate c;if(!Copy(copiedView,view,sizeof copiedView))return c;view=copiedView;c.key={Read<uint32_t>(view,8),view[44],view[45]};c.session=uintptr_t(ecs);c.page=Read<uint32_t>(view);c.slot=view[4];c.pide=Read<uint32_t>(view,20);c.count=Read<uint32_t>(view,16);c.owned=OwnedPage(c.page);c.canSalvage=allowed;
  // Confirm displayed metadata and location against the actual replicated item.

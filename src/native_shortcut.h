@@ -20,6 +20,7 @@ static void* __fastcall Mouse(void* widget,void* out,uint8_t button,uint8_t modi
 }
 static uint64_t lastEvent=0,lastSlot=0;
 static void* __fastcall Slot(void* out,void* reference,void* actions,void* state){
+ mouse_observer::Ensure(); // Fork: retry the Ctrl-gesture observer install until it lands.
  CaptureItemContext();
  native_runtime::CommitFromUi();
  const bool savedQuery=ctrlQuery;
